@@ -4,7 +4,7 @@ This repository contains documents related to the "Heart Data Unplugged project 
 
 1. The dataset is of the .sav file format, please ensure you download the dataset which is attached in this repository
 
-2. We have included a .qmd, .pdf, .sav and a readme file in the repository
+2. We have included a .qmd, .pdf and a readme file in the repository
 
 
    
