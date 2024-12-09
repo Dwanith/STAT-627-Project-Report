@@ -1,0 +1,954 @@
+---
+title: "Heart Data Unplugged - A Project Report"
+author: "Dwanith Venkat Girish & Elaine Esther Oruk Opyene"
+format:
+  pdf:
+    number-sections: true
+    toc: false
+    include-in-header: |
+      \usepackage{hyperref}
+      \hypersetup{
+        colorlinks=true,
+        linkcolor=black,
+        filecolor=black,      
+        urlcolor=black,
+      }
+---
+
+
+
+
+
+
+
+
+
+
+\begin{center}
+
+
+Statistical Machine Learning - STAT-627\\
+
+
+December 8, 2024\\
+
+
+The American University
+
+
+\end{center}
+
+\newpage
+
+
+# Table of Contents
+\tableofcontents
+\newpage
+
+
+
+
+
+## PROJECT OVERVIEW
+
+This project applies statistical machine learning techniques to the 2022 Behavioral Risk Factor Surveillance System (BRFSS) Survey dataset obtained from [CDC](https://www.cdc.gov/brfss/annual_data/annual_2022.html).
+
+The goal is to identify patterns and make accurate predictions about the risk of heart attacks for individuals based on their relevant demographic, health, and social information.
+
+## RESEARCH QUESTION
+
+1. Can we accurately classify individuals as being at high or low risk for heart attack based on their medical history and social factors?
+2. Which individual clinical parameters of individuals contribute to heart attacks?
+
+
+
+
+
+```{r setup, include = FALSE}
+
+setwd("/Users/dwanith/Desktop/Semester 3/SML/Project/")
+
+library(tidyverse)
+library(haven)
+library(knitr)
+library(writexl)
+library(class)       
+library(caret)
+library(pROC)
+library(ROSE)
+library(scales)
+library(rpart)
+library(rpart.plot)
+library(pls)
+library(glmnet)
+library(splines)
+library(e1071)
+library(randomForest)
+
+```
+
+
+
+
+```{r importing, include = FALSE}
+Project_data <- read_sav("/Users/dwanith/Desktop/Semester 3/SML/Project/CDC data.sav")
+```
+
+```{r filtering, include =FALSE}
+selected_vars <- c("@_STATE", "SEXVAR", "GENHLTH", "EXERANY2", "SLEPTIM1", "CVDINFR4", "CVDCRHD4", "CVDSTRK3", "ASTHMA3", "CHCCOPD3", "ADDEPEV3", "CHCKDNY2", "DIABETE4", "MARITAL", "EDUCA", "VETERAN3", "EMPLOY1", "INCOME3", "WEIGHT2", "HEIGHT3", "LCSNUMCG", "AVEDRNK3", "LSATISFY", "@_IMPRACE", "@_URBSTAT", "@_PHYS14D", "@_MENT14D", "HTM4", "WTKG3", "@_BMI5")
+
+filtered_data <- Project_data[, selected_vars ]
+
+descriptions <- c(
+  "State FIPS code", "Sex of respondent", "General health", 
+  "Exercise in past 30 days", "How much time do you sleep", 
+  "Ever diagnosed with Heart attack", 
+  "Ever diagnosed with Angina or Coronary heart disease", 
+  "Ever diagnosed with a Stroke", "Ever told had Asthma", 
+  "(Ever told) you had Chronic Bronchitis",
+  "(Ever told) you had a Depressive Disorder", 
+  "Ever told you have kidney disease?",
+  "(Ever told) you had Diabetes", "Marital status", 
+  "Education level", "Are you a veteran", "Employment status", 
+  "Income level", "Reported weight in pounds", 
+  "Reported height in feet and inches", 
+  "On average, how many cigarettes do you smoke each day", 
+  "Avg alcoholic drinks per day in past 30", 
+  "Satisfaction with life", "Imputed race/ethnicity value", 
+  "Urban/rural status", "Computed physical health status", 
+  "Computed mental health status", "Computed height in meters", 
+  "Computed weight in kilograms", "Computed body mass index"
+)
+
+Value_labels <- list(
+  "1 = Alabama, 2 = Alaska, 4 = Arizona, 5 = Arkansas, 6 = California, 8 = Colorado, 9 = Connecticut, 10 = Delaware, 
+   11 = District of Columbia, 12 = Florida, 13 = Georgia, 15 = Hawaii, 16 = Idaho, 17 = Illinois, 18 = Indiana, 
+   19 = Iowa, 20 = Kansas, 21 = Kentucky, 22 = Louisiana, 23 = Maine, 24 = Maryland, 25 = Massachusetts, 26 = Michigan, 
+   27 = Minnesota, 28 = Mississippi, 29 = Missouri, 30 = Montana, 31 = Nebraska, 32 = Nevada, 33 = New Hampshire, 
+   34 = New Jersey, 35 = New Mexico, 36 = New York, 37 = North Carolina, 38 = North Dakota, 39 = Ohio, 40 = Oklahoma, 
+   41 = Oregon, 42 = Pennsylvania, 44 = Rhode Island, 45 = South Carolina, 46 = South Dakota, 47 = Tennessee, 
+   48 = Texas, 49 = Utah, 50 = Vermont, 51 = Virginia, 53 = Washington, 54 = West Virginia, 55 = Wisconsin, 
+   56 = Wyoming, 66 = Guam, 72 = Puerto Rico, 78 = Virgin Islands",
+  
+  "1 = Male, 2 = Female", 
+  
+  "1 = Excellent, 2 = Very good, 3 = Good, 4 = Fair, 5 = Poor", 
+  
+  "1 = Yes, 2 = No", 
+  
+  "1-24 = Number of hours, 77 = Don't know/Not sure, 99 = Refused", 
+  
+  "1 = Yes, 2 = No", 
+  
+  "1 = Yes, 2 = No", 
+  
+  "1 = Yes, 2 = No", 
+  
+  "1 = Yes, 2 = No", 
+  
+  "1 = Yes, 2 = No",
+  
+  "1 = Yes, 2 = No",
+  
+  "1 = Yes, 2 = No, 7 = Don't know/ Not sure, 9 = Refused",
+  
+  "1 = Yes, 2 = Yes, but female told only during pregnancy, 3 = No, 4 = No, pre-diabetes or borderline diabetes, 7 = Don’t know/Not Sure, 9 = Refused",
+  
+  "1 = Married, 2 = Widowed, 3 = Divorced, 4 = Separated, 5 = Never married, 6 = Member of unmarried couple, 9 = Refused", 
+  
+  "1 = Less than high school, 2 = High school graduate, 3 = Some college, 4 = Bachelor's degree, 
+   5 = Graduate or professional degree", 
+  
+  "1 = Yes, 2 = No", 
+  
+  "1 = Employed for wages, 2 = Self-employed, 3 = Out of work for 1 year or more, 4 = Out of work for less than 1 year, 
+   5 = A homemaker, 6 = A student, 7 = Retired, 8 = Unable to work, 9 = Refused", 
+  
+  "1 = Less than $10,000, 2 = Less than $15,000, 3 = Less than $20,000, 4 = Less than $25,000, 
+   5 = Less than $35,000, 6 = Less than $50,000, 7 = Less than $75,000, 8 = Less than $100,000, 
+   9 = Less than $150,000, 10 = Less than $200,000, 11 = $200,000 or more, 77 = Don’t know/Not sure, 99 = Refused", 
+  
+  "0-650 = Weight in pounds, 7777 = Don’t know/Not sure, 9023-9352 = Weight in kilograms, 9999 = Refused", 
+  
+  "200-711 = Height in feet/inches, 7777 = Don’t know/Not sure, 9061-9998 = Height in meters/centimeters, 9999 = Refused", 
+  
+  "0-300 = Number of cigarettes smoked, 777 = Don’t know/Not Sure, 999 = Refused", 
+  
+  "1-76 = Number of drinks, 88 = None, 77 = Don’t know/Not sure, 99 = Refused", 
+  
+  "1 = Very satisfied, 2 = Satisfied, 3 = Dissatisfied, 4 = Very dissatisfied, 7 = Don’t know/Not sure, 9 = Refused", 
+  
+  "1 = White, Non-Hispanic, 2 = Black, Non-Hispanic, 3 = Asian, Non-Hispanic, 4 = American Indian/Alaskan Native, Non-Hispanic, 
+   5 = Hispanic, 6 = Other race, Non-Hispanic", 
+  
+  "1 = Urban counties, 2 = Rural counties", 
+  
+  "1 = Zero days when physical health not good, 2 = 1-13 days when physical health not good, 3 = 14+ days when physical health not good, 9 = Don’t know/Refused/Missing", 
+  
+  "1 = Zero days when mental health not good, 2 = 1-13 days when mental health not good, 3 = 14+ days when mental health not good, 9 = Don’t know/Refused/Missing", 
+  
+  "91-244 = Height in meters [2 implied decimal places]", 
+  
+  "2300-29500 = Weight in kilograms [2 implied decimal places]", 
+  
+  "1-9999 = BMI (Body Mass Index)"
+)
+```
+
+# VARIABLES & DESCRIPTIONS
+
+
+```{r, include =FALSE}
+
+variable_info <- data.frame(
+  Variable = selected_vars,
+  Description = descriptions,
+  stringsAsFactors = FALSE
+)
+
+```
+
+
+
+```{r}
+
+
+knitr::kable(variable_info, align = "l", col.names = c("Variable", "Description"))
+```
+
+## Response Variable:
+
+The primary response variable for Research Question I is the Risk Group (High Risk vs Low Risk), which is derived by combining information on whether an individual has ever been diagnosed with a heart attack, heart disease, or stroke.
+
+
+The primary response variable for Research Question II is the (CVDINFR4) variable in response to the question “Ever diagnosed with Heart attack?” which has a binary response (0 = No, 1 = Yes).
+
+# LITERATURE REVIEW
+
+The article “Artificial Intelligence, Machine Learning, and Cardiovascular Disease” by Mathur et al. (2020) explores how AI and ML have revolutionized cardiovascular medicine, particularly in enhancing diagnostic accuracy, predicting risks, and personalizing treatments. These advancements align with our project’s goal of leveraging AI techniques to classify cardiovascular risk factors using the 2022 CDC BRFSS survey dataset.
+
+## Relevance to the Project
+
+**Supervised Learning:**
+
+Mathur et al. (2020) highlight the application of supervised learning techniques in cardiovas- cular medicine, particularly for analyzing clinical variables, imaging data, and outcomes. For instance, Khamis et al. successfully applied supervised learning for the automatic classification of echocardiograms, achieving high accuracy in real-time cardiac function assessments.
+
+Building on these findings, our project uses supervised learning models to predict cardiovas- cular risk categories and occurrences. Our dataset includes labeled patient data, such as the presence of diabetes, kidney disease, and chronic bronchitis, as well as key demographic fac- tors. By training on this labeled data, our models aim to replicate the high predictive accuracy seen in similar applications while adapting it to our dataset’s unique features.
+
+**Big Data Analytics:**
+
+Mathur et al. (2020) emphasize the critical role of big data in AI applications for cardiovascular medicine. Large datasets, including clinical variables and patient health records, are essential for training machine learning models and ensuring precision in personalized treatments. How- ever, they also note challenges such as handling missing data, ensuring data privacy, and the computational demands of big data analytics.
+
+
+Similarly, our project leverages the large-scale 2022 CDC BRFSS survey dataset to classify cardiovascular risks. This dataset provides an extensive range of demographic and health- related variables, offering a rich foundation for machine learning applications. Additionally, our project addresses common big data challenges by employing preprocessing techniques to handle missing data and improve model robustness. This integration of big data allows for scalable and adaptable cardiovascular risk prediction models, with the potential for incorporating additional datasets in future iterations.
+
+
+# LOGISTIC REGRESSION
+
+```{r,include = FALSE}
+cleaned_data <- filtered_data
+
+cleaned_data1 <- cleaned_data %>%
+  filter(!CVDINFR4 %in% c(7, 9) & !CVDCRHD4 %in% c(7, 9) & !CVDSTRK3 %in% c(7, 9)) %>%
+  mutate(
+    RiskGroup = ifelse(CVDINFR4 == 1 | CVDCRHD4 == 1 | CVDSTRK3 == 1, "High", "Low")
+  )
+
+cleaned_data1$RiskGroup <- as.factor(cleaned_data1$RiskGroup)
+
+cleaned_data1 <- cleaned_data1 %>%
+  mutate(
+    AVEDRNK3 = case_when(
+      AVEDRNK3 == 88 ~ 0,           # Replace 88 = None with 0
+      AVEDRNK3 %in% c(77, 99) ~ NA,  # Replace 77 and 99 with NA
+      TRUE ~ AVEDRNK3                # Keep other values unchanged
+    ), 
+    LCSNUMCG = ifelse(LCSNUMCG %in% c(777, 999), NA, LCSNUMCG),
+    SLEPTIM1 = ifelse(SLEPTIM1 %in% c(77, 99), NA, SLEPTIM1),
+    EXERANY2 = ifelse(EXERANY2 %in% c(7, 9), NA, EXERANY2)
+  )
+
+cleaned_data1 <- cleaned_data1 %>%
+  mutate(
+    DIABETE4 = as.factor(DIABETE4), # Diabetes
+    CHCCOPD3 = as.factor(CHCCOPD3), # Chronic Bronchitis
+    ADDEPEV3 = as.factor(ADDEPEV3), # Depressive disorder
+    CHCKDNY2 = as.factor(CHCKDNY2), # Kidney disease
+    LSATISFY = as.factor(LSATISFY), # Life satisfaction
+    `@_IMPRACE` = as.factor(`@_IMPRACE`), # Race
+    INCOME3 = as.factor(INCOME3)    # Income level
+  )
+
+cleaned_data1 <- cleaned_data1 %>%
+  mutate(
+    WEIGHT2 = case_when(
+      WEIGHT2 %in% c(7777, 9999) ~ NA,  
+      WEIGHT2 >= 0 & WEIGHT2<= 650 ~ WEIGHT2,  # Keep only valid weight in pounds (0-650)
+      WEIGHT2 >= 9023 & WEIGHT2 <= 9352 ~ (WEIGHT2 - 9023) * 2.20462,  # Convert from kilograms to pounds
+      TRUE ~ NA  # Remove all other values
+    ),
+    
+    HEIGHT3 = case_when(
+      HEIGHT3 %in% c(7777, 9999) ~ NA,  # Remove "Don't know" and "Refused" values by turning them into NA
+      HEIGHT3 >= 200 & HEIGHT3 <= 711 ~ HEIGHT3,  # Keep valid height in feet/inches
+      HEIGHT3 >= 9061 & HEIGHT3 <= 9998 ~ (HEIGHT3 / 100) * 3.28084,  # Convert from meters/centimeters to feet
+      TRUE ~ NA  # Remove all other values
+    )
+  )
+
+cleaned_data1 <- na.omit(cleaned_data1)
+
+
+
+
+
+```
+
+```{r, include=FALSE}
+
+
+set.seed(123)
+Z <- sample(nrow(cleaned_data1), floor(0.7 * nrow(cleaned_data1)))
+train_data <- cleaned_data1[Z, ]
+test_data <- cleaned_data1[-Z, ]
+
+log_model <- glm(RiskGroup ~ DIABETE4 + CHCKDNY2 + CHCCOPD3 + 
+                   `@_IMPRACE` + INCOME3 + LCSNUMCG + AVEDRNK3 + 
+                   SLEPTIM1 + WEIGHT2 + EXERANY2 + SEXVAR, 
+                    family = binomial(link = "logit"), 
+                    data = train_data)
+
+summary(log_model)
+
+
+```
+
+**Diabetes, Kidney Disease, Chronic Bronchitis:**
+
+Individuals with diabetes (e.g., DIABETE42: 0.958, p \< 0.001), kidney disease (e.g., CHCKDNY22: 1.041, p \< 0.001), and chronic bronchitis (e.g., CHCCOPD32: 0.896, p \< 0.001) have higher odds of being at risk for a heart attack compared to those without these conditions.
+
+**Race:**
+
+Hispanics (@_IMPRACE5: 0.564, p \< 0.001) are more likely to be at risk for heart attack compared to the reference group (White, non-Hispanic)
+
+**Income:**
+
+Individuals in higher income groups particularly those earning 50,000 USD and above (e.g., INCOME39: 0.865, p \< 0.001) are more likely to be at risk for heart attack compared to lower income categories.
+
+**Gender:**
+
+Females (SEXVAR: 0.729, p \< 0.001) have higher odds of being at risk for a heart attack compared to males.
+
+**Weight:**
+
+Individuals with higher weight (WEIGHT2: 0.00103, p = 0.0137) have slightly increased risk of heart attacks.
+
+**Alcohol Consumption:**
+
+Higher alcohol consumption (AVEDRNK3: 0.107, p \< 0.001) is associated with increased odds of being at risk for a heart attack.
+
+**Sleep:** More sleep (SLEPTIM1: -0.041, p = 0.0004) is associated with lower odds of being at risk for a heart attack.
+
+**Exercise:** Exercise (EXERANY2: -0.272, p \< 0.001) is negatively related to heart attack risk, meaning those who exercise are less likely to be at risk.
+
+**Cigarette Smoking:** The relationship between smoking and heart attack risk is negative (LCSNUMCG: -0.015, p \< 0.001), but this result is unexpected and warrants further investigation.
+
+```{r, include=FALSE}
+predicted_probs <- predict(log_model, newdata = test_data, type = "response")
+
+predicted_classes <- ifelse(predicted_probs > 0.7, 1, 0)
+
+actual_classes <- test_data$RiskGroup
+actual_classes_numeric <- ifelse(actual_classes == "High", 1, 0)
+
+confusion_matrix <- table(Predicted = predicted_classes, Actual = actual_classes_numeric)
+print(confusion_matrix)
+
+accuracy <- mean(predicted_classes == actual_classes_numeric)
+print(paste("Accuracy: ", round(accuracy, 4)))
+```
+
+The model is over-predicting "Low" risk for most observations resulting in a low accuracy level of 13.77%. This is likely due to class imbalance as shown below.
+
+```{r, include=FALSE}
+table(actual_classes)
+```
+
+The class imbalance in the dataset is quite significant, with a much larger number of "Low" instances compared to "High" instances. We will balance the dataset by oversampling the minority class and undersampling the majority class using the `ROSE` function.
+
+```{r, include=FALSE}
+colnames(train_data)[colnames(train_data) == "@_IMPRACE"] <- "IMPRACE"
+
+# Balancing the data
+balanced_data <- ROSE(RiskGroup ~ DIABETE4 + CHCKDNY2 + CHCCOPD3 + 
+                      IMPRACE + INCOME3 + LCSNUMCG + AVEDRNK3 + 
+                      SLEPTIM1 + WEIGHT2 + HEIGHT3 + EXERANY2 + SEXVAR, 
+                      data = train_data, 
+                      seed = 42)$data
+
+# Log Regression with balanced data
+log_model_balanced <- glm(RiskGroup ~ DIABETE4 + CHCKDNY2 + CHCCOPD3 + 
+                          IMPRACE + INCOME3 + LCSNUMCG + AVEDRNK3 + 
+                          SLEPTIM1 + WEIGHT2 + HEIGHT3 + EXERANY2 + SEXVAR, 
+                          family = binomial(link = "logit"), 
+                          data = balanced_data)
+
+summary(log_model_balanced)
+```
+
+
+```{r}
+
+summary(log_model_balanced)
+```
+
+
+In the new balanced data log model, individuals in very low income groups (earning between 15,000 USD and 20,000) (e.g., INCOME33: 2.258e-01, p \< 0.05) are also slightly likely to be at risk for heart attack as well as individuals who fall in the racial category of Asian, Non-Hispanic (e.g. IMPRACE3 : -9.904e-01, p \< 0.01).
+
+
+The model's accuracy has improved to 66.68%.
+
+-   Precision (65.1%): Of all predicted "1s" (high-risk), 65.1% were correct.
+-   Recall (72.08%): Of all actual "1s" (high-risk), 72.08% were correctly identified.
+-   F1-Score (68.41%): The balance between precision and recall, reflecting overall effectiveness in predicting high-risk cases.
+
+```{r, include=FALSE}
+# Predictions on balanced data
+predicted_probs_balanced <- predict(log_model_balanced, 
+                          newdata = balanced_data, type = "response")
+
+predicted_classes_balanced <- ifelse(predicted_probs_balanced > 0.5, 1, 0)
+
+actual_classes_balanced <- ifelse(balanced_data$RiskGroup == "High", 1, 0)
+
+conf_matrix_balanced <- table(Predicted = predicted_classes_balanced, 
+                          Actual = actual_classes_balanced)
+print(conf_matrix_balanced)
+
+accuracy_balanced <- mean(predicted_classes_balanced == actual_classes_balanced)
+print(paste("Accuracy: ", round(accuracy_balanced, 4)))
+
+precision_balanced <- posPredValue(conf_matrix_balanced)
+recall_balanced <- sensitivity(conf_matrix_balanced)
+f1_score_balanced <- (2 * precision_balanced * recall_balanced) / (precision_balanced + recall_balanced)
+
+print(paste("Precision: ", round(precision_balanced, 4)))
+print(paste("Recall: ", round(recall_balanced, 4)))
+print(paste("F1-Score: ", round(f1_score_balanced, 4)))
+```
+
+
+
+
+
+```{r, include=FALSE}
+
+probs <- predict(log_model_balanced, type = "response")
+
+roc_curve <- roc(balanced_data$RiskGroup, probs)
+plot(roc_curve)
+
+auc(roc_curve)
+
+```
+
+```{r}
+plot(roc_curve)
+```
+
+Since our AUC is 0.7268, this suggests that the model is performing reasonably well with a moderate ability to distinguish between the classes, but there's still room for further improvement.
+
+
+
+## Comparison of Logistic Regression Model Predictions vs Actual Values
+
+```{r, include=FALSE}
+
+predicted_probs_balanced <- predict(log_model_balanced, 
+                                    newdata = balanced_data, type = "response")
+
+predicted_classes_balanced <- ifelse(predicted_probs_balanced > 0.5, 1, 0)
+
+actual_classes_balanced <- ifelse(balanced_data$RiskGroup == "High", 1, 0)
+
+set.seed(42)
+random_indices <- sample(1:nrow(balanced_data), 5)
+
+comparison_log_df <- data.frame(
+  Row = random_indices,
+  Actual_RiskGroup = factor(actual_classes_balanced[random_indices], levels = c(0, 1), labels = c("Low", "High")),
+  Predicted_RiskGroup = factor(predicted_classes_balanced[random_indices], levels = c(0, 1), labels = c("Low", "High"))
+)
+
+kable(comparison_log_df , format = "html", caption = "Log Regression Model Comparison of Actual vs. Predicted RiskGroup")
+
+```
+
+# KNN METHOD
+
+We split the data by 70% and determined the optimal k for this split that gives us the maximum level of accuracy.
+
+```{r, include=FALSE}
+
+
+# Normalizing the numeric data
+numeric_data <- balanced_data[sapply(balanced_data, is.numeric)]  
+scaled_data <- as.data.frame(lapply(numeric_data, scale))  
+
+set.seed(123)  
+Y <- createDataPartition(balanced_data$RiskGroup, p = 0.7, list = FALSE)
+train_data <- scaled_data[Y, ]
+train_labels <- balanced_data$RiskGroup[Y]
+test_data <- scaled_data[-Y, ]
+test_labels <- balanced_data$RiskGroup[-Y]
+
+accuracy_values <- numeric()
+
+for (k in 1:20) {
+  knn_model <- knn(train = train_data, test = test_data, cl = train_labels, k = k)
+  conf_matrix <- confusionMatrix(knn_model, test_labels)
+  accuracy_values[k] <- conf_matrix$overall['Accuracy']
+}
+
+# Optimal k value (highest accuracy)
+optimal_k <- which.max(accuracy_values)
+cat("Optimal k value:", optimal_k, "\n")
+
+plot(1:20, accuracy_values, type = 'b', pch = 19, col = 'blue', 
+     xlab = "k value", ylab = "Accuracy", main = "Accuracy vs. k for KNN")
+abline(v = 19, col = "red", lty = 2)
+
+
+
+
+```
+
+```{r KNN model, include=FALSE}
+knn_model <- knn(train = train_data, test = test_data, cl = train_labels, k = 19)
+
+conf_matrix <- confusionMatrix(knn_model, test_labels)
+print(conf_matrix)
+```
+
+
+```{r}
+
+plot(1:20, accuracy_values, type = 'b', pch = 19, col = 'blue', 
+     xlab = "k value", ylab = "Accuracy", main = "Accuracy vs. k for KNN")
+abline(v = 19, col = "red", lty = 2)
+
+
+
+```
+
+The optimal value of k for the KNN model was found to be 19, which resulted in an accuracy of 62.59%.
+
+Sensitivity is 71.35%, reflecting a solid performance in predicting the 'Low' risk group while Specificity is 53.80%, indicating a little room for improvement in identifying the 'High' risk group.
+
+However, this model is slightly less accurate than the one for logistic regression (66.68%).
+
+## Comparison of KNN Model Predictions vs Actual Values
+
+```{r, include=FALSE}
+knn_predictions <- knn(train = train_data, test = test_data, cl = train_labels, k = 19)
+
+actual_classes_knn <- ifelse(test_labels == "High", 1, 0)
+
+set.seed(42)
+random_indices <- sample(1:length(test_labels), 5)  
+
+comparison_knn_df <- data.frame(
+  Row = random_indices,
+  Actual_RiskGroup = factor(actual_classes_knn[random_indices], levels = c(0, 1), labels = c("Low", "High")),
+  Predicted_RiskGroup = factor(knn_predictions[random_indices], levels = c("Low", "High"))
+)
+
+kable(comparison_knn_df, format = "html", caption = "KNN Model Comparison of Actual vs. Predicted RiskGroup")
+```
+
+# DECISION TREES
+
+```{r, include=FALSE}
+
+
+selected_variables <- c("DIABETE4", "CHCKDNY2", "CHCCOPD3", "AVEDRNK3", "WEIGHT2", "SEXVAR", "EXERANY2", "SLEPTIM1", "IMPRACE", "INCOME3")
+
+subset_data <- balanced_data[, c(selected_variables, "RiskGroup")]
+
+numeric_data <- subset_data[, sapply(subset_data, is.numeric)]
+
+# Normalizing the numeric columns
+scaled_numeric_data <- as.data.frame(lapply(numeric_data, scale))
+
+# Replacing the numeric columns in subset_data with the scaled data
+subset_data_scaled <- cbind(scaled_numeric_data, subset_data[, setdiff(names(subset_data), names(numeric_data))])
+
+set.seed(123)
+train_index <- createDataPartition(subset_data_scaled$RiskGroup, p = 0.7, list = FALSE)
+train_data <- subset_data_scaled[train_index, ]
+train_labels <- subset_data$RiskGroup[train_index]
+test_data <- subset_data_scaled[-train_index, ]
+test_labels <- subset_data$RiskGroup[-train_index]
+
+subset_data$RiskGroup <- as.factor(subset_data$RiskGroup)
+
+tree_model <- rpart(RiskGroup ~ ., data = subset_data, method = "class")
+
+print(tree_model)
+
+rpart.plot(tree_model, main = "Decision Tree for RiskGroup")
+
+
+
+```
+
+
+```{r}
+rpart.plot(tree_model, main = "Decision Tree for RiskGroup")
+```
+
+This Decision Tree model has an accuracy level of 57.53% which is not very good compared to the other models we have previously used i.e. logistic regression and KNN.
+
+```{r, include=FALSE}
+predictions <- predict(tree_model, newdata = test_data, type = "class")
+
+conf_matrix <- confusionMatrix(predictions, test_labels)
+print(conf_matrix)
+
+accuracy <- conf_matrix$overall["Accuracy"]
+print(paste("Accuracy:", round(accuracy, 4)))
+
+
+```
+
+This model has an accuracy level of 57.53% which is not very good compared to the other models we have previously used i.e. logistic regression and KNN.
+
+## Comparison of Tree Model Predictions vs Actual Values
+
+```{r, include=FALSE}
+
+tree_predictions <- predict(tree_model, newdata = test_data, type = "class")
+
+set.seed(42)
+random_indices <- sample(1:length(test_labels), 5)  
+
+comparison_tree_df <- data.frame(
+  Row = random_indices,
+  Actual_RiskGroup = test_labels[random_indices],
+  Predicted_RiskGroup = tree_predictions[random_indices]
+)
+
+kable(comparison_tree_df, format = "html", caption = "Tree Model Comparison of Actual vs. Predicted RiskGroup")
+
+
+```
+
+# RESEARCH QUESTION REFORMATTED
+
+Can we accurately predict individuals getting a heart attack based on their medical history and social factors?
+
+-   Numeric variables: WEIGHT2, HEIGHT3, NOCIG, AVEDRNK3, HTM4, WEIGHTKG, BMI
+-   Categorical variables: (all variables apart from the above)
+-   Dependent variable: HA (heart attack, 0 = no, 1 = yes)
+
+```{r, include = FALSE}
+# List of values that represent non-responses
+non_response_values <- c(77, 99, "Don’t know", "Refused", NA, "", "Not asked")
+
+# Function to remove non-responses from a column
+remove_non_responses <- function(column) {
+  # Replace non-response values with NA
+  column[column %in% non_response_values] <- NA
+  return(column)
+}
+
+# Create a copy of the filtered data for safekeeping
+cleaned_data <- filtered_data  
+
+# Apply the remove_non_responses function to each column in the dataset
+for (var in selected_vars) {
+  cleaned_data[[var]] <- remove_non_responses(cleaned_data[[var]])
+}
+
+cleaned_data <- na.omit(cleaned_data)
+```
+
+```{r, include=FALSE}
+
+
+
+
+#Cleaning part 2
+
+cleaned_heart1 <- cleaned_data %>%
+  rename("STATE" = `@_STATE`, "SEX" = `SEXVAR`, "HA" = CVDINFR4, "CHD" = CVDCRHD4, "STROKE" = CVDSTRK3, "DEPR" = ADDEPEV3, "KID_DIS" = CHCKDNY2, "DIAB" = DIABETE4, "NOCIG" = LCSNUMCG, "URBRUR" = `@_URBSTAT`, "PHYSTAT" = `@_PHYS14D`, "MENT" = `@_MENT14D`, "WEIGHTKG" = WTKG3, "BMI" = `@_BMI5`, "ASTHMA" = ASTHMA3, "SLEEP" = SLEPTIM1)
+
+cleaned_heart2 <- cleaned_heart1 %>%
+  mutate(
+    WEIGHT2 = ifelse(WEIGHT2 >= 0 & WEIGHT2 <= 650, WEIGHT2, NA),
+    HEIGHT3 = ifelse(HEIGHT3 >= 200 & HEIGHT3 <= 711, HEIGHT3, NA),
+    NOCIG = ifelse(NOCIG >= 0 & NOCIG <= 300, NOCIG, NA),
+    AVEDRNK3 = ifelse(AVEDRNK3 >= 1 & AVEDRNK3 <= 76, AVEDRNK3, NA),
+    HA = ifelse(HA %in% c(1, 2), HA, NA)
+  ) %>%
+  drop_na()
+
+HD <- cleaned_heart2
+
+#__________________________________
+#Final working dataset for Dwanith
+
+head(HD)
+
+
+
+
+
+HD %>%
+  summarise(across(everything(), ~ n_distinct(.)))
+
+
+
+
+```
+
+#Lasso regression
+
+```{r, include=FALSE}
+
+
+
+
+
+HD_lasso <- HD %>%
+  mutate(HA = ifelse(HA == 2, 0, 1)) %>% 
+  mutate(across(c(WEIGHT2, HEIGHT3, NOCIG, AVEDRNK3, HTM4, WEIGHTKG, BMI), scale))
+
+
+set.seed(123)
+train_index <- createDataPartition(HD_lasso$HA, p = 0.8, list = FALSE)
+train_data <- HD_lasso[train_index, ]
+test_data <- HD_lasso[-train_index, ]
+
+train_x <- as.matrix(train_data %>% select(-HA))
+train_y <- train_data$HA
+test_x <- as.matrix(test_data %>% select(-HA))
+test_y <- test_data$HA
+
+
+lasso_model <- cv.glmnet(train_x, train_y, alpha = 1, family = "binomial")
+
+
+optimal_lambda <- lasso_model$lambda.min
+final_lasso_model <- glmnet(train_x, train_y, alpha = 1, family = "binomial", lambda = optimal_lambda)
+
+
+lasso_predictions <- predict(lasso_model, s = optimal_lambda, newx = test_x, type = "response")
+predicted_classes <- ifelse(lasso_predictions > 0.5, 1, 0)
+
+conf_matrix <- table(Predicted = predicted_classes, Actual = test_y)
+accuracy <- mean(predicted_classes == test_y)
+
+print(conf_matrix)
+print(paste("Accuracy: ", round(accuracy, 4)))
+
+
+significant_vars <- coef(final_lasso_model)
+print(significant_vars)
+
+
+
+coef_lasso <- coef(final_lasso_model)
+significant_vars <- as.data.frame(as.matrix(coef_lasso))
+significant_vars$Variable <- rownames(significant_vars)
+colnames(significant_vars) <- c("Coefficient", "Variable")
+
+
+significant_vars <- significant_vars %>%
+  filter(Variable != "(Intercept)" & Coefficient != 0) %>%
+  arrange(desc(abs(Coefficient)))
+
+
+
+
+lassoplot <- ggplot(significant_vars, aes(x = reorder(Variable, abs(Coefficient)), y = Coefficient)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Lasso Regression: Significant Predictors for Heart Attack",
+       x = "Variable", y = "Coefficient Value") +
+  theme_minimal()
+
+
+
+
+```
+
+
+
+```{r}
+
+
+lassoplot
+
+
+```
+##Interpretation
+
+The Lasso regression analysis on the CDC dataset identified negative coefficients for "CHD" (Coronary Heart Disease), "SEX" (male), "STROKE", and "CHCCOPD3" (Chronic Bronchitis) as significant predictors of heart attacks. These results underscore that these conditions and male gender are associated with an increased likelihood of heart attacks in the studied population.
+
+
+
+
+
+#Spline Regression
+
+```{r, include=FALSE}
+
+
+
+
+x_spline <- HD_lasso %>% 
+  mutate(
+    WEIGHT2 = bs(WEIGHT2, df=4),
+    HEIGHT3 = bs(HEIGHT3, df=4),
+    NOCIG = bs(NOCIG, df=4),
+    AVEDRNK3 = bs(AVEDRNK3, df=4),
+    HTM4 = bs(HTM4, df=4),
+    WEIGHTKG = bs(WEIGHTKG, df=4),
+    BMI = bs(BMI, df=4)
+  ) %>% 
+  select(-HA)
+
+y_spline <- HD_lasso$HA
+
+
+set.seed(123)
+train_index <- createDataPartition(y_spline, p = 0.8, list = FALSE)
+train_x_spline <- x_spline[train_index, ]
+train_y_spline <- y_spline[train_index]
+test_x_spline <- x_spline[-train_index, ]
+test_y_spline <- y_spline[-train_index]
+
+
+spline_model <- glm(train_y_spline ~ ., data = train_x_spline, family = binomial())
+
+
+predicted_probs_spline <- predict(spline_model, newdata = test_x_spline, type = "response")
+predicted_classes_spline <- ifelse(predicted_probs_spline > 0.5, 1, 0)
+
+
+conf_matrix_spline <- table(Predicted = predicted_classes_spline, Actual = test_y_spline)
+accuracy_spline <- mean(predicted_classes_spline == test_y_spline)
+
+
+print(conf_matrix_spline)
+print(paste("Spline Model Accuracy: ", round(accuracy_spline, 4)))
+
+
+```
+
+#Random Forest
+
+```{r, include=FALSE}
+
+set.seed(123)
+train_index <- createDataPartition(HD_lasso$HA, p = 0.8, list = FALSE)
+train_data <- HD_lasso[train_index, ] %>%
+  rename(IMPRACE = `@_IMPRACE`) %>%
+  mutate(HA = as.factor(HA)) 
+test_data <- HD_lasso[-train_index, ] %>%
+  rename(IMPRACE = `@_IMPRACE`) %>%
+  mutate(HA = as.factor(HA)) 
+
+
+rf_model <- randomForest(HA ~ ., data = train_data, ntree = 500, mtry = sqrt(ncol(train_data) - 1), importance = TRUE)
+
+
+rf_predictions <- predict(rf_model, newdata = test_data)
+
+
+conf_matrix_rf <- table(Predicted = rf_predictions, Actual = test_data$HA)
+accuracy_rf <- mean(rf_predictions == test_data$HA)
+
+
+print(conf_matrix_rf)
+print(paste("Random Forest Accuracy: ", round(accuracy_rf, 4)))
+
+
+importance(rf_model)
+varImpPlot(rf_model)
+
+
+
+```
+
+
+```{r}
+
+varImpPlot(rf_model)
+```
+In our Random Forest model, "WEIGHTKG", "HEIGHT3", and "CHD" were identified as key predictors, significantly influencing accuracy and Gini impurity, highlighting their importance in heart attack risk assessments.
+
+
+
+
+
+# CHALLENGES AND ETHICAL CONSIDERATIONS
+
+**Data Privacy Concerns:**
+
+The integrity and privacy of patient data are paramount in any healthcare-related ML project. Since our dataset includes sensitive health and demographic information, it is essential to ensure compliance with data protection and privacy regulations.
+
+While we were not working directly with medical records or real-time patient data and our informants were kept anonymous, the principles of data privacy still apply. If our project were to scale or incorporate additional data sources, it would be important to ensure that privacy concerns are addressed.
+
+**Data Integrity Issues (Poor Data Selection, Biases):**
+
+Mathur et al. (2020) highlights that AI-based systems are only as good as the data they are trained on. Issues like poor data selection, selection bias, and unintentional biases can lead to inaccurate or discriminatory predictions (White House Reports, 2016; Petersen et al., 2020).
+
+For instance, our data source predominantly represented low-risk individuals, which caused the ML models to perform poorly for high-risk groups. We addressed this by oversampling the minority group to balance the dataset for training.
+
+**Reproducibility of ML Models:**
+
+ML models, particularly those trained on complex, high-dimensional datasets, require reproducibility to ensure that they can be trusted in clinical settings (Petersen et al., 2020).
+
+Similarly, in our project, we used standardized methods for data pre-processing and model validation, ensuring that our ML model's results can be reliably reproduced across different environments or with new data.
+
+
+
+
+
+## Key Predictors of Heart Attack:
+
+
+Our project tested multiple machine learning models for cardiovascular risk prediction, with Logistic Regression performing the best at 66.68% accuracy, followed by KNN (62.59%) and Decision Tree (57.53%).
+
+Our study applied Lasso regression, spline, and random forests to the CDC dataset, identifying significant predictors of heart attack risk: 'CHD' (Coronary Heart Disease), 'SEX' (male), 'STROKE', and 'CHCCOPD3' (Chronic Bronchitis). These findings address our first research question by demonstrating that machine learning can accurately classify individuals as being at high or low risk for a heart attack based on their medical history and social factors. Regarding our second question, the significant predictors—CHD, male gender, history of stroke, and chronic bronchitis—highlight which individual clinical parameters most contribute to heart attacks.
+
+Splines confirmed non-linear relationships for numeric predictors like WEIGHT2 and BMI.
+
+Lasso and Splines achieved the highest accuracy (94.1%), demonstrating the effectiveness of variable selection and non-linear modeling. Random Forest closely followed (93.92%) and provided robust predictions with feature importance insights.
+
+Predictive accuracy across models indicates consistency in identifying important health related factors. Random Forest proved useful for mixed data types, while Lasso and Splines excelled in variable focused and relationship specific modeling.
+
+
+
+# CONCLUSIONS AND RECOMMENDATIONS
+
+These findings show potential but also highlight areas for improvement, like balancing the dataset, refining features, clubbing variables and eventually scaling numeric variables yielded sound results. While the results are promising, the models need to be more accurate and reliable for practical use, showing just how important quality data and thoughtful model design are in healthcare AI.
+
+
+# APPENDIX
+
+
+I, Elaine Esther Oruk Opyene have contributed to this project in terms of data processing, classification tasks which include Logistic regression, K nearest neighbors and decision trees, and towards the write-up of the report.
+
+I, Dwanith Venkat Girish, have contributed to this project in terms of finding the dataset, conducting prediction tasks which include lasso regression, spline regression and RandomForest methods, and as well as towards the write-up of the report.
+
+
+## REFERENCES
+
+-   Mathur P, Srivastava S, Xu X, Mehta JL. Artficial Intelligence, Machine Learning, and Cardiovascular Disease. Clinical Medicine Insights: Cardiology. 2020;14. doi:10.1177/1179546820927404
+
+-   Khamis H, Zurakhov G, Azar V, Raz A, Friedman Z, Adam D. Automatic api cal view classification of echocardiograms using a discriminative learning dic tionary. Med Image Anal. 2017;36:15-21
+
+-   Petersen SE, Abdulkareem M, Leiner T. Artificial intelligence will transform cardiac imaging-opportunities and challenges. Front Cardiovasc Med. 2019;6:133.
